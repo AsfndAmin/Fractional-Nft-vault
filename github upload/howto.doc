@@ -1,0 +1,12 @@
+deploy main contract using deploy.justit will return proxy address not the implementation, now
+go to the owners wallet address and get the contract address forn the contract creation transaction and 
+verify it in hardhat and it will get connected to the proxy.
+now to upgrade create a new script like deployv2.js and add the proxy address there and again then deploy that file 
+and then go to owner address in ether scan and get the contract address and verify it it will automatically connected to the 
+proxy.
+main commands
+ npx hardhat verify --network rinkeby 0x6fd0e3563a94bc21651b094c3a2d64c818b1df93
+ npx hardhat run scripts/deployv2.js --network rinkeby
+
+
+ https://blog.logrocket.com/using-uups-proxy-pattern-upgrade-smart-contracts/#when-should-we-use-uups

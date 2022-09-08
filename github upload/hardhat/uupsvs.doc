@@ -1,0 +1,12 @@
+While both of these share the same interface for upgrades, in UUPS proxies the upgrade is handled by the implementation, and can eventually be removed. Transparent proxies, on the other hand, include the upgrade and admin logic in the proxy itself. This means TransparentUpgradeableProxy 27 is more expensive to deploy than what is possible with UUPS proxies.
+
+In order to make this an upgradeable deployment, we need to use the function deployProxy from the Upgrades plugin.
+
+This function will be doing several things behind the scenes. The contract will be checked for unsafe patterns 76 that shouldn't be used in an upgradeable deployment, such as using the selfdestruct operation. If these checks pass, it will then deploy the implementation contract, and then deploy a proxy connected to that implementation. The result is a contract that can then be upgraded using upgrades.upgradeProxy as we will see later.
+
+The proxy we just deployed was not a UUPS proxy, however, as the current default is still Transparent Proxies. In order to use UUPS we have to manually specify so with the option kind: 'uups'.
+To authorize the owner to upgrade the contract we implement _authorizeUpgrade with the onlyOwner modifier.
+
+Once we have a new version of the contract code and we want to upgrade a proxy, we can use upgrades.upgradeProxy. It's no longer necessary to specify kind: 'uups' since it is now inferred from the proxy address.
+
+we can also remove upgradeability using uups
