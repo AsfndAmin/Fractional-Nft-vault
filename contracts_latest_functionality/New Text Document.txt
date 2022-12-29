@@ -1,0 +1,2 @@
+after deploying first set owner royality, shares, payment token and then whitelist user and fractionalize the nft
+while deploying set fee for example 700 so that you can set owner royality for example 300 later.
