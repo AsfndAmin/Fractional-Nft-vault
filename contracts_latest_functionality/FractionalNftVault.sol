@@ -12,7 +12,7 @@ import "./IFractionalNftVault.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
-contract FractionalNftVault is   
+contract FractionalNftVaultV2 is   
     Initializable,
     AccessControlUpgradeable,
     ERC721HolderUpgradeable,
@@ -177,7 +177,12 @@ contract FractionalNftVault is
         _transferAmount(item.paymentIndx, msg.sender, item.nftOwner, creatorAmount);
         _transferAmount(item.paymentIndx, msg.sender, liquidityWallet, liquidityAmount);
 
-        Shares(item.shareToken).safeTransfer(msg.sender, _totalShares);
+        Shares(item.shareToken).safeTransfer(msg.sender, _totalShares); 
+        // (bool success, bytes memory data) = address(item.shareToken).call(abi.encodeWithSelector(0xa9059cbb, msg.sender, _totalShares));
+        //  require(
+        //     success && (data.length == 0 || abi.decode(data, (bool))),
+        //     "Fractionalnft::tshares,safeTransfer: safetransfer failed"  
+        // );
 
         emit ShareSold(
             msg.sender,
@@ -190,12 +195,12 @@ contract FractionalNftVault is
     }
 
     function _transferAmount(uint8 _indx, address _msgSender, address receiver, uint256 amount) internal {
-   // IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
-    (bool success, bytes memory data) = address(paymentToken[_indx]).call(abi.encodeWithSelector(0x23b872dd, _msgSender, receiver, amount));
-         require(
-            success && (data.length == 0 || abi.decode(data, (bool))),
-            "Fractionalnft::transferAmount: transferFrom failed" 
-        );
+   IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
+    // (bool success, bytes memory data) = address(paymentToken[_indx]).call(abi.encodeWithSelector(0x0794dd31, _msgSender, receiver, amount));
+    //      require(
+    //         success && (data.length == 0 || abi.decode(data, (bool))),
+    //         "Fractionalnft::_transferAmount: safeTransferFrom failed"  
+    //     );
 //https://goerli.etherscan.io/tx/0x444f45b69eca9a2cecbe30103fa30e59e39e859c004f1bef7b8599362c55d321  transaction after this functionality
     }
 
@@ -217,8 +222,12 @@ contract FractionalNftVault is
 
         require(unSoldAmount > 0, "FractionalNftVault: sold out");
         require(block.timestamp > item.preSaleEndTime, "FractionalNftVault: preSale not finished");
-        Shares(item.shareToken).safeTransfer(msg.sender, unSoldAmount);
-
+       // Shares(item.shareToken).safeTransfer(msg.sender, unSoldAmount);
+    (bool success, bytes memory data) = address(item.shareToken).call(abi.encodeWithSelector(0xe46e538f, msg.sender, unSoldAmount));
+         require(
+            success && (data.length == 0 || abi.decode(data, (bool))), 
+            "Fractionalnft::transferAmount: transferFrom failed"  
+        );
         emit ClaimUnSoldToken(msg.sender, unSoldAmount, block.timestamp);
     }
 
@@ -290,6 +299,9 @@ contract FractionalNftVault is
     {}
      function checkUpdate()external pure returns(uint256){
         return 1;
+    }
+         function checkUpdatev2()external pure returns(uint256){
+        return 1;   
     }
     
 }
