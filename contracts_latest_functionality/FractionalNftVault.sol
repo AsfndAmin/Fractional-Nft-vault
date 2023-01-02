@@ -32,7 +32,7 @@ contract FractionalNftVault is
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using SafeERC20 for Shares;
 
-    uint256 public vaultCount = 1;
+    uint256 public vaultCount;
     uint256 public fee;
     address public liquidityWallet;
     uint256 private holdoutPeriod;
@@ -101,7 +101,7 @@ contract FractionalNftVault is
         uint8 _paymentIndx
     ) external override nonReentrant{
         require(isWhitelisted[msg.sender] , "FractionalNftVault: not whiteListed");
-
+        vaultCount++;
         _safeMint(
             address(this),
             vaultCount
@@ -151,7 +151,7 @@ contract FractionalNftVault is
             _preSaleStartTime + holdoutPeriod,
             uniSwapPair
         );
-        vaultCount++;
+        
 
 
     }
@@ -190,17 +190,22 @@ contract FractionalNftVault is
     }
 
     function _transferAmount(uint8 _indx, address _msgSender, address receiver, uint256 amount) internal {
-    IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
-      
+   // IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
+    (bool success, bytes memory data) = address(paymentToken[_indx]).call(abi.encodeWithSelector(0x23b872dd, _msgSender, receiver, amount));
+         require(
+            success && (data.length == 0 || abi.decode(data, (bool))),
+            "Fractionalnft::transferAmount: transferFrom failed" 
+        );
+//https://goerli.etherscan.io/tx/0x444f45b69eca9a2cecbe30103fa30e59e39e859c004f1bef7b8599362c55d321  transaction after this functionality
     }
 
     //calculates the shares for the given amount    
     function calculateShare(uint256 _amount) public view returns(uint256, uint256, uint256) {
         (uint16 companyRatio, uint16 creatorRatio, uint16 liquidityRatio) = getShareRatio();
-         uint256 companyA = (_amount / 10000) * companyRatio;
-         uint256 creatorA = (_amount / 10000) * creatorRatio;
-         uint256 liquidityA = (_amount / 10000) * liquidityRatio;
-
+         uint256 companyA =((_amount * companyRatio)/ 10000) ;
+         uint256 creatorA = ((_amount * creatorRatio )/ 10000);
+         uint256 liquidityA = ((_amount * liquidityRatio)/ 10000) ;
+ 
          return(companyA, creatorA, liquidityA);
     }
 
@@ -283,4 +288,8 @@ contract FractionalNftVault is
         onlyRole(UPGRADER_ROLE)
         override
     {}
+     function checkUpdate()external pure returns(uint256){
+        return 1;
+    }
+    
 }
