@@ -170,7 +170,7 @@ contract FractionalNftVaultV2 is
 
         
         uint256 finalfee = ((_totalShares * item.unitPrice) / 1 ether);
-        require(finalfee >= 10, "Insufficient payment amount");
+        require(finalfee >= 10000, "Insufficient payment amount");
 
         (uint256 companyAmount, uint256 creatorAmount, uint256 liquidityAmount) = calculateShare(finalfee);
         _transferAmount(item.paymentIndx, msg.sender, companyShareReceiver, companyAmount);
