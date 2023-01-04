@@ -12,7 +12,7 @@ import "./IFractionalNftVault.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
-contract FractionalNftVaultV2 is   
+contract FractionalNftVault is   
     Initializable,
     AccessControlUpgradeable,
     ERC721HolderUpgradeable,
@@ -23,55 +23,10 @@ contract FractionalNftVaultV2 is
 {
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-      /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
     //using safeerc20's for token transfer safety
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using SafeERC20 for Shares;
 
-    uint256 public vaultCount;
-    uint256 public fee;
-    address public liquidityWallet;
-    uint256 private holdoutPeriod;
-    uint16 public liquidityShare;  // 150 ---> 15%
-    uint16 public companyShare;
-    uint16 private creatorShare;
-    uint16 private _ownerRoyalty;
-    address private companyShareReceiver;
-
-
-
-    // Mapping from itemId -> Item struct
-    mapping(uint256 => Item) private vaults;
-    // Mapping from paymentIndex -> address of payment token
-    mapping(uint16 => address) private paymentToken;
-    // Mapping from address of whitelisted -> bool
-    mapping(address => bool) private isWhitelisted;
-
-   // Initializes initial contract state
-    // Since we are using UUPS proxy, we cannot use contructor instead need to use this
-    function initialize(uint256 _fee, address _liquidityWallet, address _companyShare, uint256 _holdoutPeriod, string memory name_, string memory symbol_) external initializer {
-        __AccessControl_init();
-        __ERC721Holder_init();
-        __UUPSUpgradeable_init();
-        __ERC721_init(name_ , symbol_);
-        __ReentrancyGuard_init();
-        fee = _fee;       // 25 ---> 2.5 %
-        liquidityWallet = _liquidityWallet;
-        holdoutPeriod = _holdoutPeriod;
-        companyShareReceiver = _companyShare;
-
-        //granting roles
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(UPGRADER_ROLE, msg.sender);
-  
-
-    } 
-
-    // struct to store data for the fractionalized nft
+        // struct to store data for the fractionalized nft
     struct Item {
         address nftOwner;
         address shareToken;
@@ -82,9 +37,53 @@ contract FractionalNftVaultV2 is
         uint8 paymentIndx;
     }
 
-    //Allows only owner to change the fee (share contract platform fee)
-    function setfee(uint256 _fee) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        fee = _fee;
+    uint256 public fractionId;
+    uint256 public serviceFee;
+    address public liquidityWallet;
+    uint256 private holdoutPeriod;
+    uint16 public liquidityShare;  // 100 ---> 1%
+    uint16 public ventureShare;  // we need to look for altervative word for company
+    uint16 private creatorShare;
+    uint16 private creatorFee;
+    address private companyShareReceiver;
+
+    // Mapping from itemId -> Item struct
+    mapping(uint256 => Item) private vaults;
+    // Mapping from paymentIndex -> address of payment token
+    mapping(uint16 => address) private paymentToken;
+    // Mapping from address of whitelisted -> bool
+    mapping(address => bool) private isWhitelisted;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+   // Initializes initial contract state
+    // Since we are using UUPS proxy, we cannot use contructor instead need to use this
+    function initialize(uint256 _serviceFee, address _liquidityWallet, address _companyShare, uint256 _holdoutPeriod, string memory name_, string memory symbol_) external initializer {
+        __AccessControl_init();
+        __ERC721Holder_init();
+        __UUPSUpgradeable_init();
+        __ERC721_init(name_ , symbol_);
+        __ReentrancyGuard_init();
+        serviceFee = _serviceFee;       // 250 ---> 2.5 %
+        liquidityWallet = _liquidityWallet;
+        holdoutPeriod = _holdoutPeriod;
+        companyShareReceiver = _companyShare;
+
+        //granting roles
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(UPGRADER_ROLE, msg.sender);
+  
+
+    }
+
+    //Allows only owner to change the serviceFee (share contract platform serviceFee)
+    function setServiceFee(uint256 _serviceFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        serviceFee = _serviceFee;
+
+        emit ServiceFeeUpdated(_serviceFee);  
     }
   
     // Allows user to fractionalize nft
@@ -94,31 +93,31 @@ contract FractionalNftVaultV2 is
     function fractionalizeNft(
         string memory _name,
         string memory _symbol,
+        address _router,
         uint256 _supply, // in wei
         uint256 _unitPrice, // in wei
         uint256 _preSaleStartTime,
-        address _router,
         uint8 _paymentIndx
     ) external override nonReentrant{
-        require(isWhitelisted[msg.sender] , "FractionalNftVault: not whiteListed");
-        vaultCount++;
+        require(isWhitelisted[msg.sender], "Not wl");
+
+        fractionId++;
         _safeMint(
             address(this),
-            vaultCount
+            fractionId
         );
-
         uint256 amountLiquidityWallet = ((_supply * liquidityShare) / 10000);
-        uint256 amountMsgsender = ((_supply * (10000 - liquidityShare)) / 10000);
+        uint256 availableForSale = ((_supply * (10000 - liquidityShare)) / 10000);
 
- 
-        Shares __token = new Shares( _name,
+        Shares __token = new Shares(
+            _name,
             _symbol,
             _supply,
-            _ownerRoyalty,
-            fee,
+            creatorFee,
+            serviceFee,
             msg.sender,
             amountLiquidityWallet,
-            amountMsgsender,
+            availableForSale,
             liquidityWallet,
            _preSaleStartTime + holdoutPeriod
             );
@@ -130,30 +129,26 @@ contract FractionalNftVaultV2 is
             router.WETH()
         );
 
-        vaults[vaultCount] = Item({
+        vaults[fractionId] = Item({
             nftOwner: address(msg.sender),
             shareToken: address(__token),
-            nftId: vaultCount,
+            nftId: fractionId,
             unitPrice: _unitPrice,
             preSaleStartTime: _preSaleStartTime,
             preSaleEndTime: _preSaleStartTime + holdoutPeriod,
             paymentIndx: _paymentIndx
         });
 
-
         emit FractionalizeNft(
             msg.sender,
+            uniSwapPair,
+            address(__token),
             _supply,
             _unitPrice,
-            vaultCount,
-            address(__token),
+            fractionId,
             _preSaleStartTime,
-            _preSaleStartTime + holdoutPeriod,
-            uniSwapPair
+            _preSaleStartTime + holdoutPeriod
         );
-        
-
-
     }
 
     // Allows user to buy the _totalShares at _id 
@@ -164,11 +159,9 @@ contract FractionalNftVaultV2 is
         Item memory item = vaults[_id];
         require(
             block.timestamp >= item.preSaleStartTime && item.preSaleEndTime > block.timestamp,
-            "FractionalNftVault: preSale not Started or ended"
+            "FractionalNftVault: Invalid time"
         );
 
-
-        
         uint256 finalfee = ((_totalShares * item.unitPrice) / 1 ether);
         require(finalfee >= 10000, "Insufficient payment amount");
 
@@ -177,31 +170,20 @@ contract FractionalNftVaultV2 is
         _transferAmount(item.paymentIndx, msg.sender, item.nftOwner, creatorAmount);
         _transferAmount(item.paymentIndx, msg.sender, liquidityWallet, liquidityAmount);
 
-        Shares(item.shareToken).safeTransfer(msg.sender, _totalShares); 
-        // (bool success, bytes memory data) = address(item.shareToken).call(abi.encodeWithSelector(0xa9059cbb, msg.sender, _totalShares));
-        //  require(
-        //     success && (data.length == 0 || abi.decode(data, (bool))),
-        //     "Fractionalnft::tshares,safeTransfer: safetransfer failed"  
-        // );
-
+        IERC20Upgradeable(item.shareToken).safeTransfer(msg.sender, _totalShares); 
+  
         emit ShareSold(
             msg.sender,
+            item.shareToken,
             _totalShares,
             item.unitPrice,
             item.nftId,
-            item.shareToken,
             block.timestamp
         );
     }
 
     function _transferAmount(uint8 _indx, address _msgSender, address receiver, uint256 amount) internal {
-   IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
-    // (bool success, bytes memory data) = address(paymentToken[_indx]).call(abi.encodeWithSelector(0x0794dd31, _msgSender, receiver, amount));
-    //      require(
-    //         success && (data.length == 0 || abi.decode(data, (bool))),
-    //         "Fractionalnft::_transferAmount: safeTransferFrom failed"  
-    //     );
-//https://goerli.etherscan.io/tx/0x444f45b69eca9a2cecbe30103fa30e59e39e859c004f1bef7b8599362c55d321  transaction after this functionality
+        IERC20Upgradeable(paymentToken[_indx]).safeTransferFrom( _msgSender, receiver, amount);
     }
 
     //calculates the shares for the given amount    
@@ -217,17 +199,15 @@ contract FractionalNftVaultV2 is
      // Allows the owner of the fractionalized nft to claim his unsold share tokens
     function claimRemainingShareToken(uint256 _id) external override {
         Item storage item = vaults[_id];
+
         require(msg.sender == item.nftOwner, "FractionalNftVault: nft owner only");
-        uint256 unSoldAmount = Shares(item.shareToken).balanceOf(address(this));
+        uint256 unSoldAmount = IERC20Upgradeable(item.shareToken).balanceOf(address(this));
 
         require(unSoldAmount > 0, "FractionalNftVault: sold out");
         require(block.timestamp > item.preSaleEndTime, "FractionalNftVault: preSale not finished");
-       // Shares(item.shareToken).safeTransfer(msg.sender, unSoldAmount);
-    (bool success, bytes memory data) = address(item.shareToken).call(abi.encodeWithSelector(0xe46e538f, msg.sender, unSoldAmount));
-         require(
-            success && (data.length == 0 || abi.decode(data, (bool))), 
-            "Fractionalnft::transferAmount: transferFrom failed"  
-        );
+        IERC20Upgradeable(item.shareToken).safeTransfer(msg.sender, unSoldAmount);
+
+
         emit ClaimUnSoldToken(msg.sender, unSoldAmount, block.timestamp);
     }
 
@@ -238,30 +218,42 @@ contract FractionalNftVaultV2 is
     }
 
      // Allow only owner to whitelist a address to fractionalize 
-    function addWhitelist(address _whiteListAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        isWhitelisted[_whiteListAddress] = true;
-        emit whitelistAdded(_whiteListAddress);
+    function addWhitelist(address[] memory _whiteListAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for(uint16 indx = 0; indx < _whiteListAddress.length; indx++) {
+        isWhitelisted[_whiteListAddress[indx]] = true;
+        }
+
+        emit WhitelistAdded(_whiteListAddress);
     }
 
     // Allow only owner to remove a whitelisted a address to fractionalize 
-    function addBlacklist(address _blackListAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        isWhitelisted[_blackListAddress] = false;
-        emit blacklistAdded(_blackListAddress);
+    function addBlacklist(address[] memory _blackListAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for(uint16 indx = 0; indx < _blackListAddress.length; indx++) { 
+        isWhitelisted[_blackListAddress[indx]] = false;
+        }
+
+        emit BlacklistAdded(_blackListAddress);
     }
 
      // Allow only owners to change the company, creator and liquidity share
     function setShareRatio(uint16 _companyShare, uint16 _creatorShare, uint16 _liquidityShare) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_companyShare + _creatorShare + _liquidityShare == 10000, "Sum must be equal to 10000 pt");
 
-        companyShare = _companyShare;
+        ventureShare = _companyShare;
         creatorShare = _creatorShare;
         liquidityShare = _liquidityShare;
-        emit ShareRatioChanged(companyShare, creatorShare,liquidityShare );
+        emit ShareRatioChanged(ventureShare, creatorShare,liquidityShare );
+    }
+
+    function updateLiquidityWallet(address _newWallet) external {
+        require(_newWallet != address(0), "zero address");
+
+        liquidityWallet = _newWallet;
     }
 
     // Allows users to get check ratios of shares
     function getShareRatio() public view returns(uint16, uint16, uint16) {
-        return (companyShare, creatorShare, liquidityShare);
+        return (ventureShare, creatorShare, liquidityShare);
     }
 
     // Allows users to get vaults data of given id
@@ -274,34 +266,27 @@ contract FractionalNftVaultV2 is
         return paymentToken[_index];
     }
 
-    // Allow only owner to change the royalty
-    function setOwnerRoyality(uint16 _royality) external onlyRole(DEFAULT_ADMIN_ROLE){
-            _ownerRoyalty = _royality;
-            emit royalityChanged(_royality);
+    // Allow only owner to change the creator fee
+    function setOwnerFee(uint16 _fee) external onlyRole(DEFAULT_ADMIN_ROLE){
+            creatorFee = _fee;
+            emit CreatorFeeUpdated(_fee);
     }
 
         // Allow only owner to change the companyShareAddress
     function setCompanyShareAddress(address _companyAddress) external onlyRole(DEFAULT_ADMIN_ROLE){
             companyShareReceiver = _companyAddress;
-            emit companyAddressChanged(_companyAddress);
+            emit CompanyAddressChanged(_companyAddress);
     }
 
 
-        function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControlUpgradeable, ERC721Upgradeable) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControlUpgradeable, ERC721Upgradeable) returns (bool) {
         return interfaceId == type(IAccessControlUpgradeable).interfaceId || super.supportsInterface(interfaceId);
     }
 
    // Allow only admins to perform a future upgrade to the contract
-      function _authorizeUpgrade(address newImplementation)
+    function _authorizeUpgrade(address newImplementation)
         internal
         onlyRole(UPGRADER_ROLE)
         override
     {}
-     function checkUpdate()external pure returns(uint256){
-        return 1;
-    }
-         function checkUpdatev2()external pure returns(uint256){
-        return 1;   
-    }
-    
 }
