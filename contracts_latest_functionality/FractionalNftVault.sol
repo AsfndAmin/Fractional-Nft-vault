@@ -4,6 +4,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";  
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeMathUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -25,7 +26,8 @@ contract FractionalNftVault is
 
     //using safeerc20's for token transfer safety
     using SafeERC20Upgradeable for IERC20Upgradeable;
-
+    using SafeMathUpgradeable for uint256;
+    using SafeMathUpgradeable for uint16;
         // struct to store data for the fractionalized nft
     struct Item {
         address nftOwner;
@@ -45,6 +47,7 @@ contract FractionalNftVault is
     uint16 public ventureShare;  // we need to look for altervative word for company
     uint16 private creatorShare;
     uint16 private creatorFee;
+    uint16 private base;
     address private companyShareReceiver;
 
     // Mapping from itemId -> Item struct
@@ -71,6 +74,7 @@ contract FractionalNftVault is
         liquidityWallet = _liquidityWallet;
         holdoutPeriod = _holdoutPeriod;
         companyShareReceiver = _companyShare;
+        base = 10000;
 
         //granting roles
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -106,8 +110,9 @@ contract FractionalNftVault is
             address(this),
             fractionId
         );
-        uint256 amountLiquidityWallet = ((_supply * liquidityShare) / 10000);
-        uint256 availableForSale = ((_supply * (10000 - liquidityShare)) / 10000);
+        require(_supply >= base," supply too low");
+        uint256 amountLiquidityWallet = (_supply.mul(liquidityShare)).div(base);
+        uint256 availableForSale = (_supply.sub(amountLiquidityWallet));
 
         Shares __token = new Shares(
             _name,
@@ -162,8 +167,8 @@ contract FractionalNftVault is
             "FractionalNftVault: Invalid time"
         );
 
-        uint256 finalfee = ((_totalShares * item.unitPrice) / 1 ether);
-        require(finalfee >= 10000, "Insufficient payment amount");
+        uint256 finalfee = (_totalShares.mul(item.unitPrice)).div(1 ether);
+        require(finalfee >= base, "Insufficient payment amount");
 
         (uint256 companyAmount, uint256 creatorAmount, uint256 liquidityAmount) = calculateShare(finalfee);
         _transferAmount(item.paymentIndx, msg.sender, companyShareReceiver, companyAmount);
@@ -189,9 +194,9 @@ contract FractionalNftVault is
     //calculates the shares for the given amount    
     function calculateShare(uint256 _amount) public view returns(uint256, uint256, uint256) {
         (uint16 companyRatio, uint16 creatorRatio, uint16 liquidityRatio) = getShareRatio();
-         uint256 companyA =((_amount * companyRatio)/ 10000) ;
-         uint256 creatorA = ((_amount * creatorRatio )/ 10000);
-         uint256 liquidityA = ((_amount * liquidityRatio)/ 10000) ;
+         uint256 companyA =(_amount.mul(companyRatio)).div(base);
+         uint256 creatorA = (_amount.mul(creatorRatio)).div(base);
+         uint256 liquidityA = (_amount.mul(liquidityRatio)).div(base);  
  
          return(companyA, creatorA, liquidityA);
     }
@@ -237,7 +242,8 @@ contract FractionalNftVault is
 
      // Allow only owners to change the company, creator and liquidity share
     function setShareRatio(uint16 _companyShare, uint16 _creatorShare, uint16 _liquidityShare) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_companyShare + _creatorShare + _liquidityShare == 10000, "Sum must be equal to 10000 pt");
+        uint256 sum = (_companyShare.add(_creatorShare).add(_liquidityShare));  
+        require(sum == base, "Sum must be equal to 10000 pt"); 
 
         ventureShare = _companyShare;
         creatorShare = _creatorShare;
